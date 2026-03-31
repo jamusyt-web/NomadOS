@@ -6,6 +6,8 @@ import Lighting from "@/pages/Lighting";
 import Power from "@/pages/Power";
 import Climate from "@/pages/Climate";
 import { SimulationProvider } from "@/hooks/useSimulatedData";
+import { HardwareProvider } from "@/hooks/useHardware";
+import { IdleOverlay } from "@/components/IdleOverlay";
 
 function Router() {
   return (
@@ -23,20 +25,20 @@ function Router() {
 
 function App() {
   return (
-    <SimulationProvider>
-      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-        {/* Fullscreen app container sized exactly to 1024x600 for Raspberry Pi 7" display */}
-        <div className="w-screen h-screen min-w-[1024px] min-h-[600px] max-w-[1024px] max-h-[600px] overflow-hidden bg-background text-foreground flex flex-col mx-auto shadow-2xl relative font-sans">
-          <TopBar />
-          
-          <main className="flex-1 relative overflow-y-auto no-scrollbar pb-24 px-6 pt-4">
-            <Router />
-          </main>
-
-          <BottomNav />
-        </div>
-      </WouterRouter>
-    </SimulationProvider>
+    <HardwareProvider>
+      <SimulationProvider>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <div className="w-screen h-screen min-w-[1024px] min-h-[600px] overflow-hidden bg-background text-foreground flex flex-col mx-auto relative font-sans">
+            <TopBar />
+            <main className="flex-1 relative overflow-hidden px-5 pt-3">
+              <Router />
+            </main>
+            <BottomNav />
+            <IdleOverlay />
+          </div>
+        </WouterRouter>
+      </SimulationProvider>
+    </HardwareProvider>
   );
 }
 

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useSimulatedData } from "@/hooks/useSimulatedData";
+import { useHardware } from "@/hooks/useHardware";
 import { format } from "date-fns";
-import { Wifi, SignalHigh } from "lucide-react";
+import { Wifi, WifiOff } from "lucide-react";
 
 export function TopBar() {
   const { state } = useSimulatedData();
+  const { status } = useHardware();
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -12,28 +14,55 @@ export function TopBar() {
     return () => clearInterval(timer);
   }, []);
 
+  const isConnected = status === "connected";
+  const isConnecting = status === "connecting";
+
   return (
-    <div className="h-12 w-full flex items-center justify-between px-6 bg-background border-b border-border/50 text-muted-foreground z-50 relative">
-      <div className="flex items-center gap-4">
-        <span className="text-lg font-bold text-foreground tracking-wider uppercase">NOMAD</span>
-        <div className="h-4 w-px bg-border"></div>
-        <div className="flex flex-col">
-          <span className="text-xs font-semibold leading-none">{state.climate.outdoorTempF}°F OUT</span>
-        </div>
+    <div
+      className="h-10 w-full flex items-center justify-between px-6 bg-background/90 backdrop-blur-sm z-50 relative"
+      style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}
+    >
+      {/* Left — van name + outdoor temp */}
+      <div className="flex items-center gap-4 min-w-[200px]">
+        <span className="text-sm font-semibold tracking-[0.18em] text-foreground/90 uppercase">NOMAD</span>
+        <span className="text-white/20 text-xs">|</span>
+        <span className="text-xs text-muted-foreground font-medium">
+          {state.climate.outdoorTempF.toFixed(0)}°F
+        </span>
       </div>
 
-      <div className="flex items-center justify-center font-mono text-xl font-bold text-foreground">
+      {/* Center — clock */}
+      <div className="font-mono text-base font-medium text-foreground/95 tracking-widest tabular-nums">
         {format(time, "HH:mm")}
       </div>
 
-      <div className="flex items-center gap-4">
+      {/* Right — status */}
+      <div className="flex items-center gap-3 min-w-[200px] justify-end">
         {state.alerts.length > 0 && (
-          <span className="px-2 py-0.5 rounded-full bg-destructive/20 text-destructive text-xs font-bold animate-pulse">
-            {state.alerts.length} ALERTS
+          <span className="px-2 py-0.5 rounded-full bg-destructive/20 text-destructive text-[10px] font-bold tracking-wider uppercase animate-pulse">
+            {state.alerts.length} Alert{state.alerts.length > 1 ? "s" : ""}
           </span>
         )}
-        <Wifi size={18} />
-        <SignalHigh size={18} />
+
+        {/* Arduino connection indicator */}
+        <div className="flex items-center gap-1.5" data-testid="connection-status">
+          {isConnected ? (
+            <>
+              <Wifi size={13} className="text-accent" />
+              <span className="text-[10px] text-accent font-medium tracking-wider">LIVE</span>
+            </>
+          ) : isConnecting ? (
+            <>
+              <Wifi size={13} className="text-muted-foreground animate-pulse" />
+              <span className="text-[10px] text-muted-foreground tracking-wider">SYNC</span>
+            </>
+          ) : (
+            <>
+              <WifiOff size={13} className="text-muted-foreground/50" />
+              <span className="text-[10px] text-muted-foreground/50 tracking-wider">SIM</span>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

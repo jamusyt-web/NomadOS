@@ -1,38 +1,66 @@
 import { Link, useLocation } from "wouter";
 import { Home, Lightbulb, BatteryCharging, Thermometer } from "lucide-react";
 import { motion } from "framer-motion";
+import { useSimulatedData } from "@/hooks/useSimulatedData";
 
 export function BottomNav() {
   const [location] = useLocation();
+  const { state } = useSimulatedData();
+
+  const activeLights = state.lights.filter(l => l.isOn).length;
 
   const tabs = [
-    { path: "/", label: "Home", icon: Home },
-    { path: "/lighting", label: "Lights", icon: Lightbulb },
-    { path: "/power", label: "Power", icon: BatteryCharging },
-    { path: "/climate", label: "Climate", icon: Thermometer },
+    { path: "/",         label: "Home",    icon: Home,            badge: null },
+    { path: "/lighting", label: "Lights",  icon: Lightbulb,       badge: activeLights > 0 ? activeLights : null },
+    { path: "/power",    label: "Power",   icon: BatteryCharging, badge: null },
+    { path: "/climate",  label: "Climate", icon: Thermometer,     badge: null },
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-24 bg-background/95 backdrop-blur-md border-t border-border flex items-center justify-around px-4 pb-2 z-50">
+    <div
+      className="h-[60px] w-full flex items-center justify-around px-4 z-50 relative"
+      style={{ borderTop: "1px solid rgba(255,255,255,0.05)", background: "hsl(240 20% 5% / 0.97)", backdropFilter: "blur(12px)" }}
+      data-testid="bottom-nav"
+    >
       {tabs.map((tab) => {
         const isActive = location === tab.path;
         const Icon = tab.icon;
 
         return (
-          <Link key={tab.path} href={tab.path} className="relative flex flex-col items-center justify-center w-24 h-full" data-testid={`nav-${tab.label.toLowerCase()}`}>
-            <div className={`p-3 rounded-2xl transition-colors duration-200 z-10 ${isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
-              <Icon size={28} strokeWidth={isActive ? 2.5 : 2} />
-            </div>
-            <span className={`text-[11px] font-bold tracking-wide uppercase mt-1 z-10 ${isActive ? 'text-primary' : 'text-muted-foreground'}`}>
-              {tab.label}
-            </span>
+          <Link
+            key={tab.path}
+            href={tab.path}
+            className="relative flex flex-col items-center justify-center h-full flex-1 gap-0.5"
+            data-testid={`nav-${tab.label.toLowerCase()}`}
+          >
+            {/* Active indicator bar at top */}
             {isActive && (
               <motion.div
-                layoutId="nav-pill"
-                className="absolute inset-1 top-2 bottom-4 bg-primary/10 rounded-2xl border border-primary/20"
-                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                layoutId="nav-bar"
+                className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full bg-primary"
+                transition={{ type: "spring", stiffness: 500, damping: 40 }}
               />
             )}
+
+            {/* Icon */}
+            <div className="relative">
+              <Icon
+                size={20}
+                strokeWidth={isActive ? 2 : 1.5}
+                className={`transition-all duration-200 ${isActive ? "text-primary" : "text-muted-foreground/60"}`}
+              />
+              {/* Badge */}
+              {tab.badge !== null && (
+                <span className="absolute -top-1 -right-2 w-4 h-4 rounded-full bg-primary text-background text-[9px] font-bold flex items-center justify-center">
+                  {tab.badge}
+                </span>
+              )}
+            </div>
+
+            {/* Label */}
+            <span className={`text-[10px] tracking-widest uppercase font-medium transition-colors duration-200 ${isActive ? "text-primary" : "text-muted-foreground/50"}`}>
+              {tab.label}
+            </span>
           </Link>
         );
       })}

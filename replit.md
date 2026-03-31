@@ -1,96 +1,96 @@
-# Workspace
+# Van Control Hub
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+A touchscreen control panel for a converted camper van, designed for a 7" Raspberry Pi display (1024×600). Built as a Tesla-style dark UI that controls every electrical system in the van.
 
 ## Stack
 
+- **Frontend**: React + Vite + TypeScript (artifacts/van-control)
+- **Styling**: Tailwind CSS v4, Framer Motion, Recharts
+- **Hardware bridge**: Python 3 (hardware/pi_bridge.py)
+- **Microcontroller**: ELEGOO UNO R3 Arduino (hardware/van_controller/van_controller.ino)
 - **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+- **API framework**: Express 5 (artifacts/api-server) — for future backend features
 
-## Structure
+## System Architecture
 
-```text
-artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+```
+[Solar Panels] ──► [MPPT Charge Controller] ──► [Leisure Battery]
+                                                        │
+                                               [12V Fuse Panel]
+                                                        │
+                    [MOSFET × 5 + relay]       [INA219 Monitor]
+                    (lights + inverter)         (I2C current sensor)
+                              │
+                        [ELEGOO UNO R3]
+                              │ USB Serial (115200 baud)
+                        [Raspberry Pi]
+                              │ WebSocket (ws://localhost:8765)
+                     [React Touchscreen UI]
 ```
 
-## TypeScript & Composite Projects
+## Features
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+- **Dashboard** — Battery SOC gauge, animated power flow diagram, solar/load readouts, quick light toggles
+- **Lighting** — 5 zones (Cab, Living, Bed, Desk, Exterior) with PWM dimming + warm/cool color
+- **Power** — Battery details, solar chart, inverter toggle, shore/alternator indicators
+- **Climate** — Fridge temp control, compressor status, fan speed, indoor temperature
+- **Idle mode** — After 60s of inactivity, fades to a minimal clock display and dims the Pi backlight to ~10% (solar-friendly)
+- **Hardware integration** — WebSocket connection to Pi bridge; falls back to realistic simulated data when disconnected
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+## Hardware Files (hardware/)
 
-## Root Scripts
+| File | Purpose |
+|------|---------|
+| `van_controller/van_controller.ino` | Arduino sketch — reads INA219, controls MOSFETs, sends JSON over serial |
+| `pi_bridge.py` | Raspberry Pi bridge — reads Arduino serial, exposes WebSocket server |
+| `README.md` | Full wiring diagram, pin mapping, Pi setup instructions |
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+## Running in Development
 
-## Packages
+```bash
+pnpm --filter @workspace/van-control run dev
+```
 
-### `artifacts/api-server` (`@workspace/api-server`)
+The app runs in "SIM" mode (simulated data) when the Pi bridge isn't connected. This is expected during development.
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
+## Running on the Raspberry Pi
 
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+1. Upload `van_controller.ino` to the ELEGOO UNO via Arduino IDE
+2. On the Pi: `pip3 install pyserial websockets`
+3. `python3 hardware/pi_bridge.py` (auto-detects serial port)
+4. Open `http://localhost/` in Chromium kiosk mode
 
-### `lib/db` (`@workspace/db`)
+## Key Components
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
+- `artifacts/van-control/src/hooks/useSimulatedData.tsx` — React context with all van state + realistic fluctuations
+- `artifacts/van-control/src/hooks/useHardware.tsx` — WebSocket client, merges real Arduino data over simulated state
+- `artifacts/van-control/src/hooks/useIdleMode.ts` — Inactivity timer, triggers idle overlay + backlight dim
+- `artifacts/van-control/src/components/IdleOverlay.tsx` — Full-screen minimal clock shown when idle
+- `artifacts/van-control/src/components/CircularGauge.tsx` — Reusable SVG arc gauge
+- `artifacts/van-control/src/components/PowerFlowDiagram.tsx` — Animated Solar → Battery → Loads visual
 
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
+## Design System
 
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+- Theme: Dark-only, Tesla-inspired
+- Background: `#08080F` (deep space black)
+- Primary: `#E8B84B` (warm amber — battery/power)
+- Accent: `#3ECFCF` (cool teal — solar/climate)
+- Font: Inter (Google Fonts)
+- Touch targets: minimum 48px for Pi touchscreen usability
 
-### `lib/api-spec` (`@workspace/api-spec`)
+## Arduino → Pi Protocol
 
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
+Arduino sends JSON every 1 second:
+```json
+{"bat_v":13.24,"bat_a":4.12,"bat_soc":78,"solar_v":18.4,"solar_w":187,"yield_wh":940,"temp_f":68.5,"lights":[1,0,0,0,0],"brightness":[80,100,50,100,100],"inverter":false}
+```
 
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+Pi UI sends commands:
+```json
+{"cmd":"setLight","idx":0,"on":true,"brightness":80}
+{"cmd":"setInverter","on":true}
+{"cmd":"allLightsOff"}
+{"cmd":"setBacklight","level":200}
+```
