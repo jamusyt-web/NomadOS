@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Van Control Hub"
+version = "1.0.0"
+id = "artifacts/van-control"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21377
+
+[services.development]
+run = "pnpm --filter @workspace/van-control run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/van-control", "run", "build" ]
+publicDir = "artifacts/van-control/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21377"
+BASE_PATH = "/"
