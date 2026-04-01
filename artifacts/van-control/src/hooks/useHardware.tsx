@@ -1,29 +1,50 @@
 /**
- * useHardware — WebSocket connection to the Raspberry Pi serial bridge.
- * 
- * When the bridge (pi_bridge.py) is running on the Pi at ws://localhost:8765,
- * this hook feeds real Arduino sensor data into the app state.
- * 
- * When NOT connected (e.g. during development on a laptop), it
- * transparently falls back to the simulated data from useSimulatedData.
+ * useHardware — Hardware connection layer.
+ *
+ * Supports two connection modes automatically:
+ *
+ *  1. Electron (Raspberry Pi)
+ *     When running inside Electron, uses window.vanAPI (IPC) to receive
+ *     live Arduino telemetry directly — no Python bridge needed.
+ *
+ *  2. Browser (development / web)
+ *     Falls back to WebSocket (ws://localhost:8765) to connect to the
+ *     Python pi_bridge.py script if running in a plain browser.
+ *
+ *  3. Simulated (offline)
+ *     When neither is available, the app runs on simulated data from
+ *     useSimulatedData — transparent to the rest of the app.
  */
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import type { SimulationState } from "./useSimulatedData";
 
+// ── Electron API type (injected by preload.mjs) ───────────────────────────────
+declare global {
+  interface Window {
+    vanAPI?: {
+      onTelemetry: (cb: (data: HardwarePayload) => void) => () => void;
+      onStatus: (cb: (status: { connected: boolean; port?: string; error?: string }) => void) => () => void;
+      sendCommand: (cmd: object) => void;
+      setBacklight: (level: number) => void;
+    };
+  }
+}
+
 const WS_URL = "ws://localhost:8765";
 const RECONNECT_DELAY_MS = 3000;
 
 export type ConnectionStatus = "connected" | "disconnected" | "connecting";
+export type ConnectionMode = "electron" | "websocket" | "simulated";
 
 export type HardwareContextType = {
   status: ConnectionStatus;
+  mode: ConnectionMode;
   hardwareState: Partial<HardwarePayload> | null;
   sendCommand: (cmd: object) => void;
   setBacklight: (level: number) => void;
 };
 
-/** Raw payload shape from the Arduino/bridge */
 export type HardwarePayload = {
   bat_v: number;
   bat_a: number;
@@ -32,8 +53,8 @@ export type HardwarePayload = {
   solar_w: number;
   yield_wh: number;
   temp_f: number;
-  lights: number[];      // [0|1, 0|1, 0|1, 0|1, 0|1]
-  brightness: number[];  // [0-100, ...]
+  lights: number[];
+  brightness: number[];
   inverter: boolean;
   connected: boolean;
   ts: number;
@@ -42,12 +63,38 @@ export type HardwarePayload = {
 const HardwareContext = createContext<HardwareContextType | null>(null);
 
 export function HardwareProvider({ children }: { children: React.ReactNode }) {
+  const isElectron = typeof window !== "undefined" && !!window.vanAPI;
+  const mode: ConnectionMode = isElectron ? "electron" : "websocket";
+
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [hardwareState, setHardwareState] = useState<Partial<HardwarePayload> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const connect = useCallback(() => {
+  // ── Electron IPC mode ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isElectron || !window.vanAPI) return;
+
+    setStatus("connecting");
+
+    const unsubTelemetry = window.vanAPI.onTelemetry((data) => {
+      setHardwareState(data);
+      setStatus(data.connected ? "connected" : "disconnected");
+    });
+
+    const unsubStatus = window.vanAPI.onStatus((s) => {
+      setStatus(s.connected ? "connected" : "disconnected");
+    });
+
+    return () => {
+      unsubTelemetry();
+      unsubStatus();
+    };
+  }, [isElectron]);
+
+  // ── WebSocket mode (browser fallback) ────────────────────────────────────────
+  const connectWs = useCallback(() => {
+    if (isElectron) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     setStatus("connecting");
@@ -64,42 +111,46 @@ export function HardwareProvider({ children }: { children: React.ReactNode }) {
         const data: HardwarePayload = JSON.parse(event.data);
         setHardwareState(data);
         if (data.connected === false) setStatus("disconnected");
-      } catch {
-        // ignore malformed
-      }
+      } catch { /* ignore */ }
     };
 
-    ws.onerror = () => {
-      setStatus("disconnected");
-    };
+    ws.onerror = () => setStatus("disconnected");
 
     ws.onclose = () => {
       setStatus("disconnected");
       wsRef.current = null;
-      retryRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
+      retryRef.current = setTimeout(connectWs, RECONNECT_DELAY_MS);
     };
-  }, []);
+  }, [isElectron]);
 
   useEffect(() => {
-    connect();
+    if (isElectron) return;
+    connectWs();
     return () => {
       if (retryRef.current) clearTimeout(retryRef.current);
       wsRef.current?.close();
     };
-  }, [connect]);
+  }, [connectWs, isElectron]);
 
+  // ── Commands ─────────────────────────────────────────────────────────────────
   const sendCommand = useCallback((cmd: object) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (isElectron && window.vanAPI) {
+      window.vanAPI.sendCommand(cmd);
+    } else if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(cmd));
     }
-  }, []);
+  }, [isElectron]);
 
   const setBacklight = useCallback((level: number) => {
-    sendCommand({ cmd: "setBacklight", level: Math.round(level) });
-  }, [sendCommand]);
+    if (isElectron && window.vanAPI) {
+      window.vanAPI.setBacklight(Math.round(level));
+    } else {
+      sendCommand({ cmd: "setBacklight", level: Math.round(level) });
+    }
+  }, [isElectron, sendCommand]);
 
   return (
-    <HardwareContext.Provider value={{ status, hardwareState, sendCommand, setBacklight }}>
+    <HardwareContext.Provider value={{ status, mode, hardwareState, sendCommand, setBacklight }}>
       {children}
     </HardwareContext.Provider>
   );
@@ -112,9 +163,8 @@ export function useHardware() {
 }
 
 /**
- * Merge hardware readings into simulated state.
- * When hardware data is available, real values override simulated ones.
- * This lets you always call useSimulatedData() regardless of connection.
+ * Merge real hardware readings over simulated state.
+ * When hardware is connected, real values override simulated ones.
  */
 export function mergeHardwareIntoState(
   sim: SimulationState,

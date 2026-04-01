@@ -1,0 +1,24 @@
+{
+  "name": "@workspace/van-electron",
+  "version": "1.0.0",
+  "description": "Van Control Hub — Electron wrapper for Raspberry Pi",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "build-ui": "BUILD_TARGET=electron pnpm --filter @workspace/van-control run build",
+    "dev": "BUILD_TARGET=electron concurrently \"pnpm --filter @workspace/van-control run dev\" \"wait-on http://localhost:21377 && electron .\"",
+    "rebuild-serial": "electron-rebuild -f -w serialport"
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^12.0.0",
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "concurrently": "^9.1.2",
+    "electron": "^36.3.1",
+    "wait-on": "^8.0.3"
+  }
+}

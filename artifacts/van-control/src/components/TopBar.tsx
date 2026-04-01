@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { useSimulatedData } from "@/hooks/useSimulatedData";
 import { useHardware } from "@/hooks/useHardware";
 import { format } from "date-fns";
-import { Wifi, WifiOff } from "lucide-react";
+import { Wifi, WifiOff, Cpu } from "lucide-react";
 
 export function TopBar() {
   const { state } = useSimulatedData();
-  const { status } = useHardware();
+  const { status, mode } = useHardware();
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -16,6 +16,7 @@ export function TopBar() {
 
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
+  const isElectron = mode === "electron";
 
   return (
     <div
@@ -44,9 +45,14 @@ export function TopBar() {
           </span>
         )}
 
-        {/* Arduino connection indicator */}
+        {/* Connection indicator */}
         <div className="flex items-center gap-1.5" data-testid="connection-status">
-          {isConnected ? (
+          {isConnected && isElectron ? (
+            <>
+              <Cpu size={13} className="text-accent" />
+              <span className="text-[10px] text-accent font-medium tracking-wider">LIVE</span>
+            </>
+          ) : isConnected ? (
             <>
               <Wifi size={13} className="text-accent" />
               <span className="text-[10px] text-accent font-medium tracking-wider">LIVE</span>

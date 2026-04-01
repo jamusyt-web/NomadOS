@@ -39,6 +39,24 @@ A touchscreen control panel for a converted camper van, designed for a 7" Raspbe
 - **Idle mode** — After 60s of inactivity, fades to a minimal clock display and dims the Pi backlight to ~10% (solar-friendly)
 - **Hardware integration** — WebSocket connection to Pi bridge; falls back to realistic simulated data when disconnected
 
+## Electron App (artifacts/van-electron/)
+
+The van control app is packaged as an Electron desktop application for the Raspberry Pi.
+This eliminates the need for a Python bridge — Electron talks directly to the Arduino over serial.
+
+| File | Purpose |
+|------|---------|
+| `main.mjs` | Electron main process — creates fullscreen kiosk window, manages serial port, exposes IPC |
+| `preload.mjs` | Context bridge — exposes `window.vanAPI` to the React renderer safely |
+| `package.json` | Dependencies: electron, serialport, @electron/rebuild |
+
+**Boot flow on Pi:** Power on → Auto-login → X11 starts (openbox) → Electron launches fullscreen → Van Control Hub
+
+**Connection modes in useHardware.tsx:**
+- `electron` — uses `window.vanAPI` IPC (Electron on Pi, talks directly to Arduino)
+- `websocket` — connects to `ws://localhost:8765` (browser + Python bridge)
+- `simulated` — realistic fake data when no hardware connected (development)
+
 ## Hardware Files (hardware/)
 
 | File | Purpose |
