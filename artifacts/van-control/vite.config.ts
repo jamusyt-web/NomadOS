@@ -2,7 +2,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
-import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
 const isElectronBuild = process.env.BUILD_TARGET === "electron";
 
@@ -33,21 +32,28 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    ...(!isElectronBuild ? [runtimeErrorOverlay()] : []),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined &&
-    !isElectronBuild
-      ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer({
-              root: path.resolve(import.meta.dirname, ".."),
-            }),
+    // All Replit-specific plugins are loaded dynamically so the Pi build
+    // never tries to import them (they aren't installed on the Pi).
+    ...(isElectronBuild
+      ? []
+      : [
+          await import("@replit/vite-plugin-runtime-error-modal").then((m) =>
+            m.default()
           ),
-          await import("@replit/vite-plugin-dev-banner").then((m) =>
-            m.devBanner(),
-          ),
-        ]
-      : []),
+          ...(process.env.NODE_ENV !== "production" &&
+          process.env.REPL_ID !== undefined
+            ? [
+                await import("@replit/vite-plugin-cartographer").then((m) =>
+                  m.cartographer({
+                    root: path.resolve(import.meta.dirname, ".."),
+                  })
+                ),
+                await import("@replit/vite-plugin-dev-banner").then((m) =>
+                  m.devBanner()
+                ),
+              ]
+            : []),
+        ]),
   ],
   resolve: {
     alias: {
