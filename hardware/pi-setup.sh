@@ -116,37 +116,23 @@ sudo -u "$PI_USER" npx @electron/rebuild -f -w serialport 2>/dev/null || \
 
 echo "[4/9] Done."
 
-# ── 5. Build the React UI ─────────────────────────────────────────────────────
+# ── 5. Verify pre-built UI ────────────────────────────────────────────────────
 echo ""
-echo "[5/9] Building React UI for Electron (this may take 5-10 minutes)..."
-cd "$APP_DIR"
+echo "[5/9] Checking pre-built UI..."
+UI_DIST="$APP_DIR/artifacts/van-control/dist/public/index.html"
 
-# Limit Node.js memory to 512 MB — prevents OOM crash on Pi 3 / Pi 4 1GB
-# Increase to 1024 if you have a Pi 4 with 4GB RAM
-export NODE_OPTIONS="--max-old-space-size=512"
-
-if sudo -u "$PI_USER" \
-  NODE_OPTIONS="--max-old-space-size=512" \
-  BUILD_TARGET=electron \
-  pnpm --filter @workspace/van-control run build; then
-  echo "[5/9] UI built successfully."
+if [ -f "$UI_DIST" ]; then
+  echo "  Pre-built UI found — no build needed on Pi."
+  echo "[5/9] Done."
 else
   echo ""
-  echo "  Build failed — trying with reduced parallelism..."
-  if sudo -u "$PI_USER" \
-    NODE_OPTIONS="--max-old-space-size=512" \
-    BUILD_TARGET=electron \
-    VITE_BUILD_MINIFY=false \
-    pnpm --filter @workspace/van-control run build; then
-    echo "[5/9] UI built successfully (reduced mode)."
-  else
-    echo ""
-    echo "  WARNING: UI build failed. You can try manually later:"
-    echo "    cd $APP_DIR"
-    echo "    BUILD_TARGET=electron NODE_OPTIONS=--max-old-space-size=512 pnpm --filter @workspace/van-control run build"
-    echo ""
-    echo "  Continuing setup anyway..."
-  fi
+  echo "  ERROR: Built UI files not found at $UI_DIST"
+  echo ""
+  echo "  The UI must be built in Replit and committed to GitHub before"
+  echo "  running this script. In Replit, run:"
+  echo "    BUILD_TARGET=electron pnpm --filter @workspace/van-control run build"
+  echo "  Then commit and push to GitHub, and re-run this setup script."
+  exit 1
 fi
 
 # ── 6. Configure auto-login ───────────────────────────────────────────────────

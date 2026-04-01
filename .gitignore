@@ -3,6 +3,11 @@
 # compiled output
 dist
 tmp
+
+# Exception: van-control pre-built UI is committed so the Pi never needs to build
+!artifacts/van-control/dist/
+!artifacts/van-control/dist/public/
+!artifacts/van-control/dist/public/**
 out-tsc
 *.tsbuildinfo
 .expo
