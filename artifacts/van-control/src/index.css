@@ -290,4 +290,26 @@
 
   .no-default-hover-elevate {}
   .no-default-active-elevate {}
+
+  /* Rainbow hue slider for RGB lighting zones */
+  .hue-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: white;
+    border: 3px solid rgba(255,255,255,0.9);
+    box-shadow: 0 0 6px rgba(0,0,0,0.6);
+    cursor: pointer;
+  }
+  .hue-slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: white;
+    border: 3px solid rgba(255,255,255,0.9);
+    box-shadow: 0 0 6px rgba(0,0,0,0.6);
+    cursor: pointer;
+  }
 }
