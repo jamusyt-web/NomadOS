@@ -2,30 +2,16 @@
 # =============================================================================
 # VAN CONTROL HUB — Raspberry Pi Setup Script
 # =============================================================================
-# Run this ONCE on a fresh Raspberry Pi OS Lite (64-bit) installation.
+# Run this ONCE on a fresh Raspberry Pi OS (64-bit) installation.
 # It configures the Pi to boot directly into the van control dashboard
 # with no visible desktop, no login screen, and nothing else.
 #
 # Usage:
-#   chmod +x pi-setup.sh
-#   sudo ./pi-setup.sh
+#   sudo bash hardware/pi-setup.sh
 #
-# What this script does:
-#   1. Installs Node.js 20 LTS + build tools
-#   2. Installs Electron dependencies (Xorg, GPU libraries)
-#   3. Clones/copies the van control app
-#   4. Builds the React UI
-#   5. Installs npm packages (including serialport native build)
-#   6. Configures auto-login (no password on boot)
-#   7. Configures X11 kiosk session that launches Electron
-#   8. Disables screen blanking / power management
-#   9. Allows backlight control without sudo
 # =============================================================================
 
-set -e  # Exit on any error
-
-APP_DIR="/home/pi/van-control"
-PI_USER="pi"
+set -e
 
 echo "=========================================="
 echo "  Van Control Hub — Pi Setup"
@@ -33,12 +19,38 @@ echo "=========================================="
 
 # ── Check we're running as root ───────────────────────────────────────────────
 if [ "$EUID" -ne 0 ]; then
-  echo "ERROR: Please run as root: sudo ./pi-setup.sh"
+  echo "ERROR: Please run as root: sudo bash hardware/pi-setup.sh"
   exit 1
 fi
 
-# ── 1. System update and dependencies ────────────────────────────────────────
+# ── Auto-detect the real user (works even when called via sudo) ───────────────
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+  PI_USER="$SUDO_USER"
+elif [ -n "$USER" ] && [ "$USER" != "root" ]; then
+  PI_USER="$USER"
+else
+  # Last resort: first non-root user with a home directory
+  PI_USER=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $6 ~ /^\/home/ {print $1; exit}')
+fi
+
+if [ -z "$PI_USER" ]; then
+  echo "ERROR: Could not detect a non-root user. Please set PI_USER manually:"
+  echo "  sudo PI_USER=yourusername bash hardware/pi-setup.sh"
+  exit 1
+fi
+
+HOME_DIR="/home/$PI_USER"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+APP_DIR="$HOME_DIR/van-control"
+
 echo ""
+echo "  Username : $PI_USER"
+echo "  Home     : $HOME_DIR"
+echo "  App dir  : $APP_DIR"
+echo ""
+
+# ── 1. System update and dependencies ────────────────────────────────────────
 echo "[1/9] Updating system and installing dependencies..."
 apt-get update -qq
 apt-get install -y \
@@ -62,6 +74,7 @@ apt-get install -y \
   libasound2 \
   unclutter \
   --no-install-recommends
+echo "[1/9] Done."
 
 # ── 2. Install Node.js 20 LTS ─────────────────────────────────────────────────
 echo ""
@@ -70,59 +83,82 @@ if ! command -v node &>/dev/null || [[ $(node --version | cut -d. -f1 | tr -d 'v
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y nodejs
 fi
-echo "Node.js: $(node --version)"
-echo "npm: $(npm --version)"
+echo "  Node.js: $(node --version)"
+echo "  npm:     $(npm --version)"
+npm install -g pnpm@latest --quiet
+echo "[2/9] Done."
 
-# Install pnpm
-npm install -g pnpm@latest
-
-# ── 3. Copy app files ─────────────────────────────────────────────────────────
+# ── 3. Copy/link app files ────────────────────────────────────────────────────
 echo ""
-echo "[3/9] Setting up app directory at $APP_DIR..."
-mkdir -p "$APP_DIR"
+echo "[3/9] Setting up app directory..."
 
-# If running from inside the project directory, copy files
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-
-if [ -d "$PROJECT_ROOT/artifacts/van-control" ]; then
-  echo "Copying project files..."
-  cp -r "$PROJECT_ROOT/." "$APP_DIR/"
-  chown -R "$PI_USER:$PI_USER" "$APP_DIR"
+# If the project is already cloned into APP_DIR, skip copying
+if [ "$PROJECT_ROOT" = "$APP_DIR" ]; then
+  echo "  App already at $APP_DIR — skipping copy."
 else
-  echo "Project files not found at $PROJECT_ROOT"
-  echo "Please copy the project to $APP_DIR manually, then re-run this script."
-  exit 1
+  mkdir -p "$APP_DIR"
+  cp -r "$PROJECT_ROOT/." "$APP_DIR/"
 fi
+
+chown -R "$PI_USER:$PI_USER" "$APP_DIR"
+echo "[3/9] Done."
 
 # ── 4. Install npm packages ───────────────────────────────────────────────────
 echo ""
-echo "[4/9] Installing npm packages..."
+echo "[4/9] Installing npm packages (this may take a few minutes)..."
 cd "$APP_DIR"
 sudo -u "$PI_USER" pnpm install --no-frozen-lockfile
 
-# Rebuild serialport native module for Electron
-echo "Rebuilding serialport for Electron..."
+echo "  Rebuilding serialport for Electron..."
 cd "$APP_DIR/artifacts/van-electron"
 sudo -u "$PI_USER" npx @electron/rebuild -f -w serialport 2>/dev/null || \
-  echo "(serialport rebuild skipped — will work as long as ABI matches)"
+  echo "  (serialport rebuild skipped — will try again at runtime)"
+
+echo "[4/9] Done."
 
 # ── 5. Build the React UI ─────────────────────────────────────────────────────
 echo ""
-echo "[5/9] Building React UI for Electron..."
+echo "[5/9] Building React UI for Electron (this may take 5-10 minutes)..."
 cd "$APP_DIR"
-sudo -u "$PI_USER" BUILD_TARGET=electron pnpm --filter @workspace/van-control run build
 
-echo "UI built successfully."
+# Limit Node.js memory to 512 MB — prevents OOM crash on Pi 3 / Pi 4 1GB
+# Increase to 1024 if you have a Pi 4 with 4GB RAM
+export NODE_OPTIONS="--max-old-space-size=512"
+
+if sudo -u "$PI_USER" \
+  NODE_OPTIONS="--max-old-space-size=512" \
+  BUILD_TARGET=electron \
+  pnpm --filter @workspace/van-control run build; then
+  echo "[5/9] UI built successfully."
+else
+  echo ""
+  echo "  Build failed — trying with reduced parallelism..."
+  if sudo -u "$PI_USER" \
+    NODE_OPTIONS="--max-old-space-size=512" \
+    BUILD_TARGET=electron \
+    VITE_BUILD_MINIFY=false \
+    pnpm --filter @workspace/van-control run build; then
+    echo "[5/9] UI built successfully (reduced mode)."
+  else
+    echo ""
+    echo "  WARNING: UI build failed. You can try manually later:"
+    echo "    cd $APP_DIR"
+    echo "    BUILD_TARGET=electron NODE_OPTIONS=--max-old-space-size=512 pnpm --filter @workspace/van-control run build"
+    echo ""
+    echo "  Continuing setup anyway..."
+  fi
+fi
 
 # ── 6. Configure auto-login ───────────────────────────────────────────────────
 echo ""
 echo "[6/9] Configuring auto-login..."
 
-# Raspberry Pi OS auto-login via raspi-config
-raspi-config nonint do_boot_behaviour B2  # Console auto-login (text mode)
+# Try raspi-config first (cleanest method), fall back to manual systemd config
+if command -v raspi-config &>/dev/null; then
+  raspi-config nonint do_boot_behaviour B2 2>/dev/null || true
+fi
 
-# Also configure getty for TTY1
+# Always configure getty directly (works on all Pi OS versions)
 mkdir -p /etc/systemd/system/getty@tty1.service.d
 cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
 [Service]
@@ -132,14 +168,14 @@ EOF
 
 systemctl daemon-reload
 systemctl enable getty@tty1
+echo "[6/9] Done."
 
 # ── 7. Set up X11 kiosk auto-start ───────────────────────────────────────────
 echo ""
 echo "[7/9] Configuring X11 kiosk session..."
 
-# Openbox config — minimal window manager, no decorations
-mkdir -p "/home/$PI_USER/.config/openbox"
-cat > "/home/$PI_USER/.config/openbox/autostart" << 'EOF'
+mkdir -p "$HOME_DIR/.config/openbox"
+cat > "$HOME_DIR/.config/openbox/autostart" << EOF
 # Disable screen blanking and power management
 xset s off &
 xset s noblank &
@@ -149,68 +185,70 @@ xset -dpms &
 unclutter -idle 1 -root &
 
 # Launch Van Control Hub
-/home/pi/van-control/hardware/pi-start.sh &
+$APP_DIR/hardware/pi-start.sh &
 EOF
-chown "$PI_USER:$PI_USER" "/home/$PI_USER/.config/openbox/autostart"
+chown -R "$PI_USER:$PI_USER" "$HOME_DIR/.config"
 
-# .bash_profile to auto-start X on TTY1
-cat > "/home/$PI_USER/.bash_profile" << 'EOF'
-# Auto-start X on TTY1
+# .bash_profile — auto-start X on TTY1 login
+cat > "$HOME_DIR/.bash_profile" << 'BASHEOF'
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
   exec startx -- -nocursor 2>/dev/null
 fi
-EOF
-chown "$PI_USER:$PI_USER" "/home/$PI_USER/.bash_profile"
+BASHEOF
+chown "$PI_USER:$PI_USER" "$HOME_DIR/.bash_profile"
 
-# .xinitrc to start openbox
-cat > "/home/$PI_USER/.xinitrc" << 'EOF'
+# .xinitrc — tell X to start openbox
+cat > "$HOME_DIR/.xinitrc" << 'BASHEOF'
 exec openbox-session
-EOF
-chown "$PI_USER:$PI_USER" "/home/$PI_USER/.xinitrc"
+BASHEOF
+chown "$PI_USER:$PI_USER" "$HOME_DIR/.xinitrc"
+
+echo "[7/9] Done."
 
 # ── 8. Create launch script ───────────────────────────────────────────────────
 echo ""
 echo "[8/9] Creating launch script..."
-cat > "$APP_DIR/hardware/pi-start.sh" << 'EOF'
+cat > "$APP_DIR/hardware/pi-start.sh" << EOF
 #!/bin/bash
-# Van Control Hub — Launcher
-# This script is called by Openbox autostart on boot.
+# Van Control Hub — Launcher (auto-generated by pi-setup.sh)
 
 export DISPLAY=:0
 export ELECTRON_DISABLE_SANDBOX=1
-export LIBGL_ALWAYS_SOFTWARE=1  # Use software rendering if GPU init fails
 
-APP_DIR="/home/pi/van-control"
+APP_DIR="$APP_DIR"
 
-echo "[$(date)] Starting Van Control Hub..." >> /tmp/van-control.log
+echo "[\$(date)] Starting Van Control Hub..." >> /tmp/van-control.log
 
 # Wait for display to be ready
 sleep 2
 
-cd "$APP_DIR/artifacts/van-electron"
+cd "\$APP_DIR/artifacts/van-electron"
 exec npx electron . --no-sandbox >> /tmp/van-control.log 2>&1
 EOF
 chmod +x "$APP_DIR/hardware/pi-start.sh"
 chown "$PI_USER:$PI_USER" "$APP_DIR/hardware/pi-start.sh"
+echo "[8/9] Done."
 
-# ── 9. Backlight permissions ──────────────────────────────────────────────────
+# ── 9. Permissions ────────────────────────────────────────────────────────────
 echo ""
-echo "[9/9] Configuring backlight permissions..."
+echo "[9/9] Configuring permissions..."
+
+# Backlight control
 BACKLIGHT_PATH="/sys/class/backlight/rpi_backlight/brightness"
 if [ -f "$BACKLIGHT_PATH" ]; then
   chmod a+w "$BACKLIGHT_PATH"
-  # Make it persist across reboots via udev
   cat > /etc/udev/rules.d/99-backlight.rules << 'EOF'
 SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chmod a+w /sys/class/backlight/%k/brightness"
 EOF
-  echo "Backlight configured."
+  echo "  Backlight configured."
 else
-  echo "(Backlight path not found — will configure when Pi display is attached)"
+  echo "  (Backlight path not found — OK if display not yet connected)"
 fi
 
-# Serial port permissions
+# Serial port access for Arduino
 usermod -a -G dialout "$PI_USER"
-echo "Added $PI_USER to dialout group (serial port access)."
+echo "  Serial port (Arduino) access granted."
+echo "[9/9] Done."
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
@@ -218,14 +256,16 @@ echo "=========================================="
 echo "  Setup complete!"
 echo "=========================================="
 echo ""
-echo "  Reboot your Pi to start Van Control Hub:"
+echo "  Reboot your Pi to launch Van Control Hub:"
 echo "    sudo reboot"
 echo ""
-echo "  The Pi will boot directly into the dashboard."
+echo "  On reboot it will boot directly into"
+echo "  the dashboard. No login, no desktop."
+echo ""
 echo "  Logs: /tmp/van-control.log"
 echo ""
 echo "  To update the app later:"
-echo "    cd /home/pi/van-control"
-echo "    git pull  (or copy new files)"
-echo "    BUILD_TARGET=electron pnpm --filter @workspace/van-control run build"
+echo "    cd $APP_DIR && git pull"
+echo "    BUILD_TARGET=electron NODE_OPTIONS=--max-old-space-size=512 \\"
+echo "      pnpm --filter @workspace/van-control run build"
 echo ""
