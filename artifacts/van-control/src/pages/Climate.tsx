@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Thermometer, Snowflake, Wind, Plus, Minus, Flame,
-  AirVent, Radio, Trash2, PencilLine, X, CheckCircle, AlertCircle, Loader,
+  AirVent, Radio, PencilLine, X, CheckCircle, AlertCircle, Loader, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -22,6 +22,15 @@ export default function Climate() {
   const [pendingDevice, setPendingDevice] = useState<IRDevice>("heat");
   const [pendingLabel, setPendingLabel] = useState("");
   const [editMode, setEditMode] = useState(false);
+  const [expanded, setExpanded] = useState<Set<IRDevice>>(new Set(["heat", "ac"]));
+
+  const toggleSection = useCallback((device: IRDevice) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      next.has(device) ? next.delete(device) : next.add(device);
+      return next;
+    });
+  }, []);
 
   const pendingLabelRef = useRef(pendingLabel);
   const pendingDeviceRef = useRef(pendingDevice);
@@ -52,6 +61,8 @@ export default function Climate() {
   }, [onDeviceEvent, addButton]);
 
   const startAddButton = (device: IRDevice) => {
+    // Auto-expand the section so the user can see the new button once saved
+    setExpanded(prev => new Set([...prev, device]));
     setPendingDevice(device);
     setPendingLabel("");
     setLearnState("labeling");
@@ -144,6 +155,8 @@ export default function Climate() {
           glowColor="hsla(24,95%,53%,0.08)"
           buttons={heatButtons}
           editMode={editMode}
+          isOpen={expanded.has("heat")}
+          onToggle={() => toggleSection("heat")}
           onAdd={() => startAddButton("heat")}
           onFire={fireButton}
           onDelete={removeButton}
@@ -158,6 +171,8 @@ export default function Climate() {
           glowColor="hsla(173,80%,40%,0.08)"
           buttons={acButtons}
           editMode={editMode}
+          isOpen={expanded.has("ac")}
+          onToggle={() => toggleSection("ac")}
           onAdd={() => startAddButton("ac")}
           onFire={fireButton}
           onDelete={removeButton}
@@ -362,19 +377,29 @@ interface IRSectionProps {
   glowColor: string;
   buttons: IRButton[];
   editMode: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
   onAdd: () => void;
   onFire: (btn: IRButton) => void;
   onDelete: (id: string) => void;
 }
 
-function IRSection({ label, icon, color, borderColor, glowColor, buttons, editMode, onAdd, onFire, onDelete }: IRSectionProps) {
+function IRSection({
+  label, icon, color, borderColor, glowColor,
+  buttons, editMode, isOpen, onToggle, onAdd, onFire, onDelete,
+}: IRSectionProps) {
   return (
     <Card
-      className={`bg-card/60 border p-4 transition-all duration-300 ${buttons.length > 0 ? borderColor : "border-border"}`}
+      className={`bg-card/60 border transition-all duration-300 ${buttons.length > 0 ? borderColor : "border-border"}`}
       style={{ boxShadow: buttons.length > 0 ? `0 0 30px -10px ${glowColor}` : "none" }}
     >
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
+      {/* ── Section header (always visible) ─────────────── */}
+      <div className="flex items-center justify-between p-4">
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-2 flex-1 text-left group"
+          data-testid={`btn-toggle-${label.toLowerCase().replace(/\s+/g, "-")}`}
+        >
           <span className={color}>{icon}</span>
           <h2 className="text-base font-bold uppercase tracking-wide">{label}</h2>
           {buttons.length > 0 && (
@@ -382,58 +407,78 @@ function IRSection({ label, icon, color, borderColor, glowColor, buttons, editMo
               {buttons.length} button{buttons.length !== 1 ? "s" : ""}
             </span>
           )}
-        </div>
+          <ChevronDown
+            size={16}
+            className={`ml-1 text-muted-foreground transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`}
+          />
+        </button>
         <button
-          onClick={onAdd}
-          className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all hover:scale-105 ${color} border-current/30 bg-current/5`}
+          onClick={(e) => { e.stopPropagation(); onAdd(); }}
+          className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all hover:scale-105 ${color} border-current/30 bg-current/5 ml-2`}
           data-testid={`btn-add-${label.toLowerCase().replace(/\s+/g, "-")}`}
         >
           <Plus size={12} />
-          Add Button
+          Add
         </button>
       </div>
 
-      {buttons.length === 0 ? (
-        <div className="flex items-center justify-center h-10 rounded-xl border border-dashed border-border/50 text-muted-foreground/40 text-xs">
-          No buttons yet — add your first remote button
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <AnimatePresence>
-            {buttons.map(btn => (
-              <motion.div
-                key={btn.id}
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.8, opacity: 0 }}
-                className="relative"
-              >
-                <button
-                  onClick={() => !editMode && onFire(btn)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all
-                    ${editMode
-                      ? "border-destructive/30 bg-destructive/5 text-muted-foreground cursor-default pr-7"
-                      : `${borderColor} bg-current/5 ${color} hover:scale-105 active:scale-95`
-                    }`}
-                  data-testid={`btn-ir-${btn.label.toLowerCase().replace(/\s+/g, "-")}`}
-                >
-                  <Radio size={10} className="opacity-60" />
-                  {btn.label}
-                </button>
-                {editMode && (
-                  <button
-                    onClick={() => onDelete(btn.id)}
-                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:scale-110 transition-transform"
-                    data-testid={`btn-delete-${btn.label.toLowerCase().replace(/\s+/g, "-")}`}
-                  >
-                    <X size={10} />
-                  </button>
-                )}
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-      )}
+      {/* ── Collapsible body ─────────────────────────────── */}
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            key="body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: "easeInOut" }}
+            style={{ overflow: "hidden" }}
+          >
+            <div className="px-4 pb-4">
+              {buttons.length === 0 ? (
+                <div className="flex items-center justify-center h-10 rounded-xl border border-dashed border-border/50 text-muted-foreground/40 text-xs">
+                  No buttons yet — tap Add to learn a remote button
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <AnimatePresence>
+                    {buttons.map(btn => (
+                      <motion.div
+                        key={btn.id}
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.8, opacity: 0 }}
+                        className="relative"
+                      >
+                        <button
+                          onClick={() => !editMode && onFire(btn)}
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all
+                            ${editMode
+                              ? "border-destructive/30 bg-destructive/5 text-muted-foreground cursor-default pr-7"
+                              : `${borderColor} bg-current/5 ${color} hover:scale-105 active:scale-95`
+                            }`}
+                          data-testid={`btn-ir-${btn.label.toLowerCase().replace(/\s+/g, "-")}`}
+                        >
+                          <Radio size={10} className="opacity-60" />
+                          {btn.label}
+                        </button>
+                        {editMode && (
+                          <button
+                            onClick={() => onDelete(btn.id)}
+                            className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:scale-110 transition-transform"
+                            data-testid={`btn-delete-${btn.label.toLowerCase().replace(/\s+/g, "-")}`}
+                          >
+                            <X size={10} />
+                          </button>
+                        )}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Card>
   );
 }

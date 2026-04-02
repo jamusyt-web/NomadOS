@@ -125,8 +125,14 @@ async function initSerial() {
         if (data.event) {
           notifyRenderer('van:event', data);
         } else {
-          // Regular telemetry
-          notifyRenderer('van:telemetry', { ...data, connected: true, ts: Date.now() });
+          // Normalize telemetry keys to match the app's HardwarePayload schema.
+          // ESP-32 climate firmware uses camelCase; the app expects snake_case.
+          const normalized = { ...data };
+          if ('tempF' in normalized) {
+            normalized.temp_f = normalized.tempF;
+            delete normalized.tempF;
+          }
+          notifyRenderer('van:telemetry', { ...normalized, connected: true, ts: Date.now() });
         }
       } catch { /* ignore parse errors */ }
     });
