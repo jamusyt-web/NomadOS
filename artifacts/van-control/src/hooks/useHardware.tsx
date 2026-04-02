@@ -5,7 +5,7 @@
  *
  *  1. Electron (Raspberry Pi)
  *     When running inside Electron, uses window.vanAPI (IPC) to receive
- *     live Arduino telemetry directly — no Python bridge needed.
+ *     live device telemetry directly — no Python bridge needed.
  *
  *  2. Browser (development / web)
  *     Falls back to WebSocket (ws://localhost:8765) to connect to the
@@ -25,11 +25,21 @@ declare global {
     vanAPI?: {
       onTelemetry: (cb: (data: HardwarePayload) => void) => () => void;
       onStatus: (cb: (status: { connected: boolean; port?: string; error?: string }) => void) => () => void;
+      onEvent: (cb: (event: DeviceEvent) => void) => () => void;
       sendCommand: (cmd: object) => void;
       setBacklight: (level: number) => void;
+      readIRButtons: () => Promise<unknown[]>;
+      writeIRButtons: (buttons: unknown[]) => void;
     };
   }
 }
+
+export type DeviceEvent = {
+  event: string;
+  data?: number[];
+  reason?: string;
+  [key: string]: unknown;
+};
 
 const WS_URL = "ws://localhost:8765";
 const RECONNECT_DELAY_MS = 3000;
@@ -43,6 +53,7 @@ export type HardwareContextType = {
   hardwareState: Partial<HardwarePayload> | null;
   sendCommand: (cmd: object) => void;
   setBacklight: (level: number) => void;
+  onDeviceEvent: (cb: (event: DeviceEvent) => void) => (() => void);
 };
 
 export type HardwarePayload = {
@@ -71,6 +82,9 @@ export function HardwareProvider({ children }: { children: React.ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Event listeners registered from components
+  const eventListenersRef = useRef<Set<(event: DeviceEvent) => void>>(new Set());
+
   // ── Electron IPC mode ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!isElectron || !window.vanAPI) return;
@@ -86,9 +100,14 @@ export function HardwareProvider({ children }: { children: React.ReactNode }) {
       setStatus(s.connected ? "connected" : "disconnected");
     });
 
+    const unsubEvent = window.vanAPI.onEvent((evt) => {
+      eventListenersRef.current.forEach(cb => cb(evt));
+    });
+
     return () => {
       unsubTelemetry();
       unsubStatus();
+      unsubEvent();
     };
   }, [isElectron]);
 
@@ -108,9 +127,14 @@ export function HardwareProvider({ children }: { children: React.ReactNode }) {
 
     ws.onmessage = (event) => {
       try {
-        const data: HardwarePayload = JSON.parse(event.data);
-        setHardwareState(data);
-        if (data.connected === false) setStatus("disconnected");
+        const data = JSON.parse(event.data);
+        if (data.event) {
+          // Route to event listeners
+          eventListenersRef.current.forEach(cb => cb(data as DeviceEvent));
+        } else {
+          setHardwareState(data as HardwarePayload);
+          if ((data as HardwarePayload).connected === false) setStatus("disconnected");
+        }
       } catch { /* ignore */ }
     };
 
@@ -149,8 +173,14 @@ export function HardwareProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isElectron, sendCommand]);
 
+  // ── Device event subscription ─────────────────────────────────────────────
+  const onDeviceEvent = useCallback((cb: (event: DeviceEvent) => void) => {
+    eventListenersRef.current.add(cb);
+    return () => eventListenersRef.current.delete(cb);
+  }, []);
+
   return (
-    <HardwareContext.Provider value={{ status, mode, hardwareState, sendCommand, setBacklight }}>
+    <HardwareContext.Provider value={{ status, mode, hardwareState, sendCommand, setBacklight, onDeviceEvent }}>
       {children}
     </HardwareContext.Provider>
   );

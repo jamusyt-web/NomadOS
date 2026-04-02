@@ -12,6 +12,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === 'development';
@@ -27,6 +28,29 @@ function setBacklight(level) {
     }
   } catch {
     // Not on a Pi or no permission — silently ignore
+  }
+}
+
+// ── IR Button Storage ─────────────────────────────────────────────────────────
+const IR_FILE = path.join(os.homedir(), 'van-control-ir.json');
+
+function readIRButtons() {
+  try {
+    if (fs.existsSync(IR_FILE)) {
+      const raw = fs.readFileSync(IR_FILE, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.warn('[ir] Failed to read IR buttons:', err.message);
+  }
+  return [];
+}
+
+function writeIRButtons(buttons) {
+  try {
+    fs.writeFileSync(IR_FILE, JSON.stringify(buttons, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[ir] Failed to write IR buttons:', err.message);
   }
 }
 
@@ -49,7 +73,7 @@ async function initSerial() {
     return;
   }
 
-  // Auto-detect Arduino port
+  // Auto-detect Arduino/ESP-32 port
   const candidates = ['/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1'];
   let portPath = null;
 
@@ -61,18 +85,20 @@ async function initSerial() {
     // Try listing all ports
     try {
       const ports = await SerialPort.list();
-      const arduino = ports.find(p =>
+      const device = ports.find(p =>
         p.manufacturer?.toLowerCase().includes('arduino') ||
         p.manufacturer?.toLowerCase().includes('elegoo') ||
+        p.manufacturer?.toLowerCase().includes('espressif') ||
         p.vendorId === '2341' || // Arduino official
-        p.vendorId === '1a86'    // CH340 (common on ELEGOO clones)
+        p.vendorId === '1a86' || // CH340 (common on ELEGOO/ESP-32 clones)
+        p.vendorId === '10c4'    // CP2102 (ESP-32)
       );
-      if (arduino) portPath = arduino.path;
+      if (device) portPath = device.path;
     } catch { /* ignore */ }
   }
 
   if (!portPath) {
-    console.warn('[serial] No Arduino found. Retrying in 5s...');
+    console.warn('[serial] No device found. Retrying in 5s...');
     notifyRenderer('van:status', { connected: false, error: 'no serial port' });
     serialRetryTimeout = setTimeout(initSerial, 5000);
     return;
@@ -85,7 +111,7 @@ async function initSerial() {
     const parser = serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
 
     serialPort.on('open', () => {
-      console.log('[serial] Connected to Arduino');
+      console.log('[serial] Connected to device');
       notifyRenderer('van:status', { connected: true, port: portPath });
     });
 
@@ -94,7 +120,14 @@ async function initSerial() {
       if (!line.startsWith('{')) return;
       try {
         const data = JSON.parse(line);
-        notifyRenderer('van:telemetry', { ...data, connected: true, ts: Date.now() });
+
+        // Route one-shot events (IR learned, IR failed, etc.) to van:event
+        if (data.event) {
+          notifyRenderer('van:event', data);
+        } else {
+          // Regular telemetry
+          notifyRenderer('van:telemetry', { ...data, connected: true, ts: Date.now() });
+        }
       } catch { /* ignore parse errors */ }
     });
 
@@ -119,7 +152,7 @@ async function initSerial() {
   }
 }
 
-function sendToArduino(cmd) {
+function sendToDevice(cmd) {
   if (serialPort?.isOpen) {
     serialPort.write(JSON.stringify(cmd) + '\n', (err) => {
       if (err) console.error('[serial] Write error:', err.message);
@@ -137,11 +170,20 @@ function notifyRenderer(channel, data) {
 
 // ── IPC handlers (renderer → main) ──────────────────────────────────────────
 ipcMain.on('van:command', (_event, cmd) => {
-  sendToArduino(cmd);
+  sendToDevice(cmd);
 });
 
 ipcMain.on('van:backlight', (_event, level) => {
   setBacklight(level);
+});
+
+// IR button persistence
+ipcMain.handle('van:ir:read', () => {
+  return readIRButtons();
+});
+
+ipcMain.on('van:ir:write', (_event, buttons) => {
+  writeIRButtons(buttons);
 });
 
 // ── Window creation ──────────────────────────────────────────────────────────

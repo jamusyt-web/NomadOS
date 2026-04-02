@@ -11,7 +11,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 /** @type {import('electron').ElectronAPI} */
 const vanAPI = {
   /**
-   * Subscribe to live telemetry from Arduino.
+   * Subscribe to live telemetry from the connected device (Arduino/ESP-32).
    * Called ~1x per second with battery, solar, lights, etc.
    * @param {(data: object) => void} callback
    * @returns {() => void} unsubscribe function
@@ -35,8 +35,22 @@ const vanAPI = {
   },
 
   /**
-   * Send a control command to the Arduino.
-   * e.g. { cmd: 'setLight', idx: 0, on: true, brightness: 80 }
+   * Subscribe to one-shot device events (IR learned, IR failed, etc.)
+   * { event: string, data?: any, reason?: string }
+   * @param {(event: object) => void} callback
+   * @returns {() => void} unsubscribe function
+   */
+  onEvent(callback) {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('van:event', handler);
+    return () => ipcRenderer.removeListener('van:event', handler);
+  },
+
+  /**
+   * Send a control command to the connected device.
+   * e.g. { cmd: 'setState', on: true, brightness: 80, r: 255, g: 200, b: 100 }
+   * e.g. { cmd: 'learnIR' }
+   * e.g. { cmd: 'sendIR', data: [...] }
    * @param {object} cmd
    */
   sendCommand(cmd) {
@@ -49,6 +63,22 @@ const vanAPI = {
    */
   setBacklight(level) {
     ipcRenderer.send('van:backlight', level);
+  },
+
+  /**
+   * Read saved IR buttons from ~/van-control-ir.json on the Pi.
+   * @returns {Promise<Array>}
+   */
+  readIRButtons() {
+    return ipcRenderer.invoke('van:ir:read');
+  },
+
+  /**
+   * Write IR buttons to ~/van-control-ir.json on the Pi.
+   * @param {Array} buttons
+   */
+  writeIRButtons(buttons) {
+    ipcRenderer.send('van:ir:write', buttons);
   },
 };
 
