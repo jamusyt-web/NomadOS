@@ -13,7 +13,12 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useHardware } from "./useHardware";
 
-const IDLE_TIMEOUT_MS = 60_000; // 60 seconds
+// Pass ?idle=1 in the URL to instantly enter idle mode (for testing / demo)
+const IDLE_TIMEOUT_MS =
+  typeof window !== "undefined" && new URLSearchParams(window.location.search).has("idle")
+    ? 200
+    : 60_000; // 60 seconds
+
 const BACKLIGHT_DIM  = 15;      // ~6%  — barely visible
 const BACKLIGHT_FULL = 200;     // ~78% — normal use
 

@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useSimulatedData } from "@/hooks/useSimulatedData";
 import { useHardware } from "@/hooks/useHardware";
+import { useVanName } from "@/hooks/useVanName";
 import { format } from "date-fns";
 import { Wifi, WifiOff, Cpu } from "lucide-react";
 
 export function TopBar() {
   const { state } = useSimulatedData();
   const { status, mode } = useHardware();
+  const { vanName } = useVanName();
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -18,6 +20,8 @@ export function TopBar() {
   const isConnecting = status === "connecting";
   const isElectron = mode === "electron";
 
+  const displayName = vanName || "NOMAD";
+
   return (
     <div
       className="h-10 w-full flex items-center justify-between px-6 bg-background/90 backdrop-blur-sm z-50 relative"
@@ -25,7 +29,9 @@ export function TopBar() {
     >
       {/* Left — van name + outdoor temp */}
       <div className="flex items-center gap-4 min-w-[200px]">
-        <span className="text-sm font-semibold tracking-[0.18em] text-foreground/90 uppercase">NOMAD</span>
+        <span className="text-sm font-semibold tracking-[0.18em] text-foreground/90 uppercase">
+          {displayName}
+        </span>
         <span className="text-white/20 text-xs">|</span>
         <span className="text-xs text-muted-foreground font-medium">
           {state.climate.outdoorTempF.toFixed(0)}°F
