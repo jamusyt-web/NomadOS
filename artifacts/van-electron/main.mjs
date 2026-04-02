@@ -121,8 +121,9 @@ async function initSerial() {
       try {
         const data = JSON.parse(line);
 
-        // Route one-shot events (IR learned, IR failed, etc.) to van:event
-        if (data.event) {
+        // Route one-shot events and status messages to van:event.
+        // Regular telemetry has neither an `event` nor a `status` field.
+        if (data.event || data.status) {
           notifyRenderer('van:event', data);
         } else {
           // Normalize telemetry keys to match the app's HardwarePayload schema.
