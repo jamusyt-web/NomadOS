@@ -14,7 +14,7 @@ export default function Dashboard() {
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="h-full flex flex-col gap-6"
+      className="gpu-layer h-full flex flex-col gap-6"
     >
       {/* Top Row - Power Flow and Key Gauge */}
       <div className="grid grid-cols-3 gap-6 h-64">

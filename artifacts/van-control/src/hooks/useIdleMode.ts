@@ -13,9 +13,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useHardware } from "./useHardware";
 
-// Pass ?idle=1 in the URL to instantly enter idle mode (for testing / demo)
+// In dev mode, pass ?idle=1 in the URL to instantly enter idle mode (for testing / demo)
 const IDLE_TIMEOUT_MS =
-  typeof window !== "undefined" && new URLSearchParams(window.location.search).has("idle")
+  typeof window !== "undefined" &&
+  import.meta.env.DEV &&
+  new URLSearchParams(window.location.search).has("idle")
     ? 200
     : 60_000; // 60 seconds
 

@@ -190,7 +190,7 @@ export default function Climate() {
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="h-full flex gap-5 pb-6 relative"
+      className="gpu-layer h-full flex gap-5 pb-6 relative"
     >
       {/* ── Left Column ──────────────────────────────────────────── */}
       <div className="w-[30%] flex flex-col gap-3">

@@ -54,7 +54,7 @@ export default function Lighting() {
     <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="h-full flex flex-col pb-6"
+      className="gpu-layer h-full flex flex-col pb-6"
     >
       <div className="flex items-center justify-between mb-6">
         <div>

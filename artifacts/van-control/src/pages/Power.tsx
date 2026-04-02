@@ -27,7 +27,7 @@ export default function Power() {
     <motion.div 
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="h-full grid grid-cols-12 gap-6 pb-6"
+      className="gpu-layer h-full grid grid-cols-12 gap-6 pb-6"
     >
       {/* Left Column - Battery */}
       <div className="col-span-5 flex flex-col gap-6">
