@@ -209,7 +209,7 @@ echo "[\$(date)] Starting Van Control Hub..." >> /tmp/van-control.log
 sleep 2
 
 cd "\$APP_DIR/artifacts/van-electron"
-exec npx electron . --no-sandbox >> /tmp/van-control.log 2>&1
+exec npx electron . --no-sandbox --disable-gpu >> /tmp/van-control.log 2>&1
 EOF
 chmod +x "$APP_DIR/hardware/pi-start.sh"
 chown "$PI_USER:$PI_USER" "$APP_DIR/hardware/pi-start.sh"
