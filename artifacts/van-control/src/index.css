@@ -270,13 +270,9 @@
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-  /* GPU compositing layer — apply to framer-motion wrappers that animate */
+  /* Animation hint — intentionally no translateZ to avoid GPU compositing issues on Pi */
   .gpu-layer {
     will-change: transform, opacity;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    transform: translateZ(0);
-    -webkit-transform: translateZ(0);
   }
 
   /* Display/decorative font (Cinzel Decorative) */
