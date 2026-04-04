@@ -32,6 +32,21 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // Electron HTML patch: remove Google Fonts (no internet on Pi) and
+    // crossorigin attributes (break file:// module loading)
+    ...(isElectronBuild
+      ? [
+          {
+            name: "electron-html-patch",
+            transformIndexHtml(html: string) {
+              return html
+                .replace(/<link[^>]*fonts\.googleapis\.com[^>]*>\n?/g, "")
+                .replace(/<link[^>]*fonts\.gstatic\.com[^>]*>\n?/g, "")
+                .replace(/ crossorigin(="[^"]*")?/g, "");
+            },
+          },
+        ]
+      : []),
     // All Replit-specific plugins are loaded dynamically so the Pi build
     // never tries to import them (they aren't installed on the Pi).
     ...(isElectronBuild
