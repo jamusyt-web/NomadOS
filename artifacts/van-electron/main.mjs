@@ -219,16 +219,29 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.setMenu(null);
 
+  // Pipe ALL renderer console messages + load failures into the log file
+  mainWindow.webContents.on('console-message', (_e, level, message, line, source) => {
+    const tag = ['verbose','info','warn','error'][level] ?? 'log';
+    console.log(`[renderer:${tag}] ${message}  (${source}:${line})`);
+  });
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error(`[load-fail] ${code} ${desc}  url=${url}`);
+  });
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error(`[renderer-gone] reason=${details.reason} exit=${details.exitCode}`);
+  });
+
   // Load the UI
   if (isDev) {
     // Dev mode: load from Vite dev server
     const devPort = process.env.PORT || '21377';
     mainWindow.loadURL(`http://localhost:${devPort}/`);
-    // Uncomment to open DevTools during development:
-    // mainWindow.webContents.openDevTools({ mode: 'detach' });
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     // Production mode: load built static files
     const uiPath = path.join(__dirname, '..', 'van-control', 'dist', 'public', 'index.html');
+    console.log(`[main] Loading UI from: ${uiPath}`);
+    console.log(`[main] File exists: ${fs.existsSync(uiPath)}`);
     mainWindow.loadFile(uiPath);
   }
 
